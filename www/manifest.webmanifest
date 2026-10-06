@@ -1,0 +1,15 @@
+{
+  "name": "Manche",
+  "short_name": "Manche",
+  "description": "Learn the notes on the guitar neck by playing them.",
+  "start_url": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1f140e",
+  "theme_color": "#1f140e",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

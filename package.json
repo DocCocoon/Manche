@@ -1,0 +1,13 @@
+{
+  "name": "manche",
+  "private": true,
+  "description": "Fretboard note trainer",
+  "scripts": {
+    "start": "python3 -m http.server 8766 --directory www",
+    "test": "node tests/pitch.test.js && PLAYWRIGHT_BROWSERS_PATH=0 node tests/e2e.mjs",
+    "test:setup": "PLAYWRIGHT_BROWSERS_PATH=0 playwright install chromium-headless-shell"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}
