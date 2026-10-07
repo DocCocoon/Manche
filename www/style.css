@@ -467,6 +467,7 @@ td.ending, td.col-speed { white-space: normal; }
 
 .filter { display: grid; gap: 0.5rem; }
 .chips { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.35rem; max-width: 26rem; }
+.chips-mode { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .filter-chip {
   appearance: none;
   min-width: 0;

@@ -31,6 +31,11 @@ const STRINGS = [
 ];
 const STRING_BY_ID = Object.fromEntries(STRINGS.map((s) => [s.id, s]));
 const UNKNOWN = 'none'; // table key for games whose string could not be worked out
+const MODES = [
+  { id: 'all', name: 'All' },
+  { id: 'regular', name: 'Regular' },
+  { id: 'accelerate', name: 'Accelerate' },
+];
 
 const STORAGE = { tables: 'manche.tables', settings: 'manche.settings' };
 
@@ -41,7 +46,7 @@ const ui = {
   heard: $('heard'), cents: $('cents'), level: $('level'),
   startBtn: $('startBtn'), restartBtn: $('restartBtn'),
   tempo: $('tempo'), tempoValue: $('tempoValue'), accelBtn: $('accelBtn'), accelHint: $('accelHint'),
-  scores: $('scores'), filter: $('filter'), highBody: $('highBody'), recentBody: $('recentBody'),
+  scores: $('scores'), filter: $('filter'), modeFilter: $('modeFilter'), highBody: $('highBody'), recentBody: $('recentBody'),
 };
 
 // Storage can be missing or full (private browsing); the game works without it.
@@ -58,9 +63,10 @@ function save(key, value) {
   } catch {}
 }
 
-const settings = { tempo: CONFIG.defaultTempo, accelerate: false, filter: 'all', ...load(STORAGE.settings, {}) };
+const settings = { tempo: CONFIG.defaultTempo, accelerate: false, filter: 'all', mode: 'all', ...load(STORAGE.settings, {}) };
 settings.tempo = Math.min(CONFIG.maxTempo, Math.max(CONFIG.minTempo, Number(settings.tempo) || CONFIG.defaultTempo));
 if (settings.filter !== 'all' && !STRING_BY_ID[settings.filter]) settings.filter = 'all';
+if (!MODES.some((m) => m.id === settings.mode)) settings.mode = 'all';
 
 // A high-score table and a recent-games table for each string, plus one pair for games with no known string.
 const tables = loadTables();
@@ -103,28 +109,32 @@ function loadTables() {
 const byScore = (a, b) => b.score - a.score || a.at - b.at;
 const byNewest = (a, b) => b.at - a.at;
 
-// The rows a table shows for a filter: 'all' merges every string's table.
-function view(kind, filter = settings.filter) {
+const modeOf = (r) => (r.accelerate ? 'accelerate' : 'regular');
+
+// The rows a table shows for a string filter and a mode: 'all' merges every string's table, or both modes.
+function view(kind, filter = settings.filter, mode = settings.mode) {
   const keys = filter === 'all' ? Object.keys(tables) : [filter];
   return keys
     .flatMap((key) => tables[key][kind])
+    .filter((r) => mode === 'all' || modeOf(r) === mode)
     .sort(kind === 'high' ? byScore : byNewest)
     .slice(0, CONFIG.tableSize);
 }
 
-function bestScore(filter = settings.filter) {
-  return view('high', filter)[0]?.score ?? 0;
+function bestScore(filter = settings.filter, mode = settings.mode) {
+  return view('high', filter, mode)[0]?.score ?? 0;
+}
+
+// Keeps the first tableSize games of each mode, so filtering by mode still fills a table.
+function keepPerMode(list) {
+  const counts = { regular: 0, accelerate: 0 };
+  return list.filter((r) => ++counts[modeOf(r)] <= CONFIG.tableSize);
 }
 
 function addToTables(result) {
   const table = tables[result.string ?? UNKNOWN];
-  table.recent.unshift(result);
-  table.recent.splice(CONFIG.tableSize);
-  if (result.score > 0) {
-    table.high.push(result);
-    table.high.sort(byScore);
-    table.high.splice(CONFIG.tableSize);
-  }
+  table.recent = keepPerMode([result, ...table.recent]);
+  if (result.score > 0) table.high = keepPerMode([...table.high, result].sort(byScore));
   save(STORAGE.tables, tables);
 }
 
@@ -375,7 +385,7 @@ function endGame(reason, playedPc = null) {
 
 // Compared with the game's own string, or with every game when the string is unknown.
 function isNewBest(result) {
-  return result.score > 0 && result.score > bestScore(result.string ?? 'all');
+  return result.score > 0 && result.score > bestScore(result.string ?? 'all', 'all');
 }
 
 // The player says which string an ambiguous game was on: move it from the no-string tables to that string's.
@@ -431,9 +441,12 @@ function render() {
 }
 
 function renderBest() {
-  const { filter } = settings;
+  const { filter, mode } = settings;
   ui.best.textContent = bestScore();
-  ui.bestLabel.textContent = filter === 'all' ? 'Best' : `Best · ${STRING_BY_ID[filter].name}`;
+  const parts = ['Best'];
+  if (filter !== 'all') parts.push(STRING_BY_ID[filter].name);
+  if (mode !== 'all') parts.push(mode === 'accelerate' ? 'accel' : 'regular');
+  ui.bestLabel.textContent = parts.join(' · ');
 }
 
 // The string being played: worked out live during a game, or the last game's result.
@@ -511,7 +524,11 @@ function renderTables() {
   for (const chip of ui.filter.children) {
     chip.setAttribute('aria-pressed', String(chip.dataset.filter === settings.filter));
   }
-  const emptyFor = settings.filter === 'all' ? '' : ` on the ${STRING_BY_ID[settings.filter].label} string`;
+  for (const chip of ui.modeFilter.children) {
+    chip.setAttribute('aria-pressed', String(chip.dataset.mode === settings.mode));
+  }
+  const modeFor = settings.mode === 'all' ? '' : ` in ${settings.mode} mode`;
+  const emptyFor = (settings.filter === 'all' ? '' : ` on the ${STRING_BY_ID[settings.filter].label} string`) + modeFor;
   fillRows(ui.highBody, view('high'), `No scores yet${emptyFor}. The ten best games will show here.`, (r, i) => [
     el('td', String(i + 1), 'num rank'),
     el('td', String(r.score), 'num score'),
@@ -615,6 +632,22 @@ ui.filter.addEventListener('click', (event) => {
   const chip = event.target.closest('[data-filter]');
   if (!chip) return;
   settings.filter = chip.dataset.filter;
+  save(STORAGE.settings, settings);
+  renderBest();
+  renderTables();
+});
+
+ui.modeFilter.append(...MODES.map((m) => {
+  const chip = el('button', m.name, 'filter-chip');
+  chip.type = 'button';
+  chip.dataset.mode = m.id;
+  return chip;
+}));
+
+ui.modeFilter.addEventListener('click', (event) => {
+  const chip = event.target.closest('[data-mode]');
+  if (!chip) return;
+  settings.mode = chip.dataset.mode;
   save(STORAGE.settings, settings);
   renderBest();
   renderTables();
